@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>모스부호 학습 활동</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; }
+    .screen { display: none; height: 100vh; width: 100vw; }
+    #inputScreen {
+      display: flex; justify-content: center; align-items: center;
+      background-color: #f0f0f0; flex-direction: column;
+    }
+    textarea {
+      width: 80%; height: 100px; font-size: 1.2em;
+      padding: 10px; margin-bottom: 10px;
+    }
+    #warningMsg {
+      color: red; font-weight: bold; display: none; margin-bottom: 10px;
+    }
+    #activityScreen { flex-direction: row; display: none; }
+    #left {
+      flex: 1; background-color: black;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; color: white;
+      position: relative;
+    }
+    #circle {
+      width: 150px; height: 150px; border-radius: 50%;
+      background-color: #333;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+      transition: background-color 0.2s, box-shadow 0.2s;
+      margin: 20px;
+    }
+    #right {
+      flex: 1; background-color: #f4f4f4; padding: 40px;
+    }
+    input[type="text"] {
+      width: 100%; padding: 10px; font-size: 1.2em;
+    }
+    button {
+      padding: 10px 20px; font-size: 1.1em; margin: 10px;
+    }
+    #feedback, #timerDisplay, #attemptCount {
+      margin-top: 20px; font-size: 1.2em; font-weight: bold;
+    }
+    #correctAnswer {
+      margin-top: 15px;
+      font-size: 1.1em;
+      color: #444;
+    }
+    #backBtn {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+      margin: 10px;
+      padding: 8px 16px;
+      font-size: 1em;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="inputScreen" class="screen" style="display: flex;">
+    <h1>👤 학생 A: 영어 문장 입력</h1>
+    <textarea id="textInput" placeholder="예: I love you."></textarea><br>
+
+    <!-- ✅ 안내 문구 추가 -->
+    <div style="font-size: 0.95em; color: #333; margin-bottom: 10px;">
+      🛈 영어 모스부호는 <strong>대문자</strong>로 입력 및 출력됩니다.
+    </div>
+
+    <div id="warningMsg">⚠ 영어 문장만 입력해주세요.</div>
+    <button id="nextBtn" onclick="moveToActivity()" disabled>다음 화면으로</button>
+  </div>
+
+  <div id="activityScreen" class="screen">
+    <div id="left">
+      <div id="circle"></div>
+      <button id="playBtn" onclick="startBlinking()" disabled>🔊 재생하기</button>
+      <button id="retryBtn" onclick="startBlinking()" disabled>🔁 재생 재시도</button>
+      <button id="stopBtn" onclick="stopBlinking()" disabled>⏹ 정지</button>
+      <button onclick="startTimer()">⏱ 타이머 시작</button>
+      <div id="timerDisplay">남은 시간: 200초</div>
+    </div>
+    <div id="right">
+      <h2>👤 학생 B: 들은 내용을 영어로 입력하세요</h2>
+      <input type="text" id="guess" placeholder="정답 입력" disabled />
+      <button id="checkBtn" onclick="checkAnswer()" disabled>정답 확인</button>
+      <div id="attemptCount">제출 가능 횟수: 5회</div>
+      <div id="feedback"></div>
+      <div id="correctAnswer"></div>
+    </div>
+  </div>
+
+  <button id="backBtn" onclick="resetToStart()">🏠 처음으로</button>
+
+  <script>
+    const allowedRegex = /^[A-Za-z0-9 .,!?]*$/;
+    const morseCode = {
+      A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".",
+      F: "..-.", G: "--.", H: "....", I: "..", J: ".---",
+      K: "-.-", L: ".-..", M: "--", N: "-.", O: "---",
+      P: ".--.", Q: "--.-", R: ".-.", S: "...", T: "-",
+      U: "..-", V: "...-", W: ".--", X: "-..-", Y: "-.--",
+      Z: "--..", 0: "-----", 1: ".----", 2: "..---", 3: "...--",
+      4: "....-", 5: ".....", 6: "-....", 7: "--...", 8: "---..",
+      9: "----.", " ": "/", ".": ".-.-.-", ",": "--..--",
+      "!": "-.-.--", "?": "..--.."
+    };
+
+    let originalText = "";
+    let morseMap = [];
+    let timer = null;
+    let timeLeft = 200;
+    let blinking = false;
+    let stopBlink = false;
+    let attemptsLeft = 5;
+    let showFinalAnswer = false;
+
+    document.getElementById("textInput").addEventListener("input", validateInput);
+
+    function validateInput() {
+      const input = document.getElementById("textInput").value.trim();
+      const isValid = allowedRegex.test(input);
+      document.getElementById("nextBtn").disabled = !isValid || input === "";
+      document.getElementById("warningMsg").style.display = isValid || input === "" ? "none" : "block";
+    }
+
+    function moveToActivity() {
+      const input = document.getElementById("textInput").value.trim().toUpperCase();
+      if (!input) return;
+
+      originalText = input;
+      morseMap = [];
+      for (let i = 0; i < originalText.length; i++) {
+        const char = originalText[i];
+        const morse = morseCode[char] || "";
+        const isPunctuation = ",.!?".includes(char);
+        const isSpace = char === " ";
+
+        if (isSpace) {
+          morseMap.push({ symbol: "/", type: "space" });
+        } else {
+          [...morse].forEach(symbol => {
+            morseMap.push({ symbol, type: isPunctuation ? "punctuation" : "normal" });
+          });
+          if (i < originalText.length - 1 && originalText[i + 1] !== " ") {
+            morseMap.push({ symbol: " ", type: "interCharGap" });
+          }
+        }
+      }
+
+      document.getElementById("inputScreen").style.display = "none";
+      document.getElementById("activityScreen").style.display = "flex";
+    }
+
+    async function startBlinking() {
+      if (blinking) return;
+      blinking = true;
+      stopBlink = false;
+
+      const circle = document.getElementById("circle");
+
+      for (let { symbol, type } of morseMap) {
+        let color = "yellow";
+        let duration = 200;
+
+        if (type === "space") {
+          color = "limegreen";
+          duration = 800;
+        } else if (type === "punctuation") {
+          color = "skyblue";
+          duration = symbol === "." ? 200 : 600;
+        } else if (type === "interCharGap") {
+          await delay(600);
+          continue;
+        } else {
+          duration = symbol === "." ? 200 : 600;
+        }
+
+        if (symbol === "." || symbol === "-" || symbol === "/") {
+          await blink(circle, duration, color);
+        } else {
+          await delay(200);
+        }
+
+        if (stopBlink) break;
+      }
+
+      blinking = false;
+    }
+
+    function blink(circle, duration, color) {
+      return new Promise(resolve => {
+        circle.style.backgroundColor = color;
+        circle.style.boxShadow = `0 0 40px ${color}`;
+        setTimeout(() => {
+          circle.style.backgroundColor = "#333";
+          circle.style.boxShadow = "0 0 20px rgba(0,0,0,0.5)";
+          setTimeout(resolve, 200);
+        }, duration);
+      });
+    }
+
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function stopBlinking() {
+      stopBlink = true;
+    }
+
+    function startTimer() {
+      clearInterval(timer);
+      timeLeft = 200;
+      updateTimerDisplay();
+
+      document.getElementById("playBtn").disabled = false;
+      document.getElementById("retryBtn").disabled = false;
+      document.getElementById("stopBtn").disabled = false;
+      document.getElementById("guess").disabled = false;
+      document.getElementById("checkBtn").disabled = false;
+
+      timer = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+        if (timeLeft <= 0) {
+          clearInterval(timer);
+          document.getElementById("timerDisplay").textContent = "⛔ 시간이 종료되었습니다!";
+          disableInputs();
+        }
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      document.getElementById("timerDisplay").textContent = `남은 시간: ${timeLeft}초`;
+    }
+
+    function disableInputs() {
+      document.getElementById("guess").disabled = true;
+      document.getElementById("playBtn").disabled = true;
+      document.getElementById("retryBtn").disabled = true;
+      document.getElementById("stopBtn").disabled = true;
+    }
+
+    function checkAnswer() {
+      const feedback = document.getElementById("feedback");
+      const correctAnswer = document.getElementById("correctAnswer");
+      const guess = document.getElementById("guess").value.trim().toUpperCase();
+
+      if (showFinalAnswer) {
+        correctAnswer.textContent = `정답은: ${originalText}`;
+        document.getElementById("checkBtn").disabled = true;
+        return;
+      }
+
+      if (guess === originalText) {
+        feedback.textContent = "✅ 정답입니다!";
+        disableInputs();
+        document.getElementById("checkBtn").disabled = true;
+        clearInterval(timer);
+      } else {
+        attemptsLeft--;
+        document.getElementById("attemptCount").textContent = `제출 가능 횟수: ${attemptsLeft}회`;
+        if (attemptsLeft <= 0) {
+          feedback.textContent = "❌ 오답입니다. 기회가 모두 소진되었습니다. 정답 확인 버튼을 눌러보세요.";
+          document.getElementById("checkBtn").disabled = false;
+          showFinalAnswer = true;
+        } else {
+          feedback.textContent = "❌ 오답입니다. 다시 시도해보세요.";
+        }
+      }
+    }
+
+    function resetToStart() {
+      clearInterval(timer);
+      document.getElementById("textInput").value = "";
+      document.getElementById("guess").value = "";
+      document.getElementById("feedback").textContent = "";
+      document.getElementById("correctAnswer").textContent = "";
+      document.getElementById("attemptCount").textContent = "제출 가능 횟수: 5회";
+      document.getElementById("checkBtn").disabled = true;
+      document.getElementById("guess").disabled = true;
+      document.getElementById("playBtn").disabled = true;
+      document.getElementById("retryBtn").disabled = true;
+      document.getElementById("stopBtn").disabled = true;
+      document.getElementById("nextBtn").disabled = true;
+      document.getElementById("warningMsg").style.display = "none";
+      timeLeft = 200;
+      updateTimerDisplay();
+      attemptsLeft = 5;
+      showFinalAnswer = false;
+      document.getElementById("activityScreen").style.display = "none";
+      document.getElementById("inputScreen").style.display = "flex";
+    }
+  </script>
+</body>
+</html>
